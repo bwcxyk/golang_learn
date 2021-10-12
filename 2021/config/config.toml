@@ -1,0 +1,14 @@
+# this is a toml
+
+title = "toml exaples"
+redis = "127.0.0.1:3300"  # redis
+
+[mysql]
+host = "192.168.1.1"
+ports = 3306
+username = "root"
+password = "root123456"
+
+[huaweiocr]
+AccessKey = "xxxxx"
+SecretAccessKey = "xxxxx"
