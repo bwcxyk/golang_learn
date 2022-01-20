@@ -13,14 +13,9 @@ import (
 )
 
 var (
-	downloadDestFolder = "/Users/zhangsheng/xcrm"
-	urlFilePath        = "/Users/zhangsheng/xcrm/file.txt"
+	downloadDestFolder = "E:/file"
+	urlFilePath        = "E:/file/file.txt"
 )
-
-func init() {
-	log.SetFlags(log.Lshortfile)
-	_ = os.MkdirAll(downloadDestFolder, 0777)
-}
 
 func main() {
 	fi, err := os.Open(urlFilePath)
