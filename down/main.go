@@ -17,6 +17,11 @@ var (
 	urlFilePath        = "E:/file/file.txt"
 )
 
+func init() {
+	log.SetFlags(log.Lshortfile)
+	_ = os.MkdirAll(downloadDestFolder, 0777)
+}
+
 func main() {
 	fi, err := os.Open(urlFilePath)
 	if err != nil {

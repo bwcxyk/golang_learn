@@ -1,0 +1,7 @@
+github.com/issue9/assert/v2 v2.0.0/go.mod h1:rKr1eVGzXUhAo2af1thiKAhIA8uiSK9Wyn7mcZ4BzAg=
+github.com/issue9/assert/v2 v2.3.2 h1:J8TxGeak/CvrMchXHjs9CFChsZvpX0hGE/HTnwT6L+8=
+github.com/issue9/assert/v2 v2.3.2/go.mod h1:rKr1eVGzXUhAo2af1thiKAhIA8uiSK9Wyn7mcZ4BzAg=
+github.com/issue9/cnregion v1.2021.2 h1:LGOeGgY0F0RQHYCw+7E9NcPl8qK3eDaIVMk14quxsHk=
+github.com/issue9/cnregion v1.2021.2/go.mod h1:DpBg2skdoys4ZeyDIdTsV0xDZ3KbrG2yffqklbMMCcI=
+github.com/issue9/errwrap v0.2.1 h1:hrzBGbOCRs8acitpWSg54xNl2oaLGA/WZEf71bKaiEU=
+github.com/issue9/errwrap v0.2.1/go.mod h1:hjjkt9S/owgy48er68ACFfA6YPDO/xax18QE3lsguVQ=
