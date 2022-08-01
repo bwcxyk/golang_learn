@@ -5,29 +5,28 @@
 
 package config
 
-import(
+import (
 	"fmt"
 	"github.com/spf13/viper"
-
 )
 
 // 读取配置文件config
 
 type Config struct {
-	Redis string
-	MySQL MySQLConfig
+	Redis     string
+	MySQL     MySQLConfig
 	HuaWeiOcr HuaWeiOcrConfig
 }
 
 type MySQLConfig struct {
-	Port int
-	Host string
+	Port     int
+	Host     string
 	Username string
 	Password string
 }
 
 type HuaWeiOcrConfig struct {
-	AccessKey string
+	AccessKey       string
 	SecretAccessKey string
 }
 

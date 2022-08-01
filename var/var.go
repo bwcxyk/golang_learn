@@ -9,19 +9,17 @@ import "fmt"
 
 var (
 	name = "zhangsan"
-	age = 18
+	age  = 18
 	isOk = false
-	a1 = "ms"
+	a1   = "ms"
 )
 
-func main()  {
+func main() {
 	//name = "mengshauai"
 	//age = 18
 	//isOk = false
 	//b2 = "ms"
-	fmt.Println("name:",name)
-	fmt.Println("age:",age)
-	fmt.Println("isOk:",isOk)
+	fmt.Println("name:", name)
+	fmt.Println("age:", age)
+	fmt.Println("isOk:", isOk)
 }
-
-

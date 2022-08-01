@@ -18,14 +18,13 @@ func main() {
 	}
 	fmt.Println("sum:", sum)
 
-
 	for i, num := range nums {
 		if num == 3 {
 			fmt.Println("index:", i)
 		}
 	}
 
-	kvs := map[string]string{"a": "apple", "b": "banana", "c":"tomato"}
+	kvs := map[string]string{"a": "apple", "b": "banana", "c": "tomato"}
 	for k, v := range kvs {
 		//fmt.Println(kvs)
 		fmt.Printf("%s -> %s\n", k, v)

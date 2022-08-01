@@ -49,7 +49,6 @@ func (rabbitmq *Rabbitmq) CreateQueue(id string) error {
 	return nil
 }
 
-
 func (rabbitmq *Rabbitmq) ClearQueue(id string) (string, error) {
 	ch, err := rabbitmq.conn.Channel()
 	defer ch.Close()
@@ -62,4 +61,3 @@ func (rabbitmq *Rabbitmq) ClearQueue(id string) (string, error) {
 	}
 	return "Clear queue success", nil
 }
-

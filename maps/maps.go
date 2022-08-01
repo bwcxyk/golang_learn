@@ -27,6 +27,6 @@ func main() {
 	_, prs := m["k2"]
 	fmt.Println("prs:", prs)
 
-	n := map[string]int{"foo": 1, "bar": 2, "aar": 3, "dar":4}
+	n := map[string]int{"foo": 1, "bar": 2, "aar": 3, "dar": 4}
 	fmt.Println("map:", n)
 }

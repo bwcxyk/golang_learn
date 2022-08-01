@@ -29,7 +29,7 @@ func main() {
 	copy(c, s)
 	fmt.Println("cpy:", c)
 
-	fmt.Println("s:",s)
+	fmt.Println("s:", s)
 	l := s[2:5]
 	fmt.Println("sl1:", l)
 

@@ -6,9 +6,9 @@
 package main
 
 import (
-"fmt"
+	"fmt"
 
-"github.com/xuri/excelize/v2"
+	"github.com/xuri/excelize/v2"
 )
 
 func main() {

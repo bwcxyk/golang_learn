@@ -10,7 +10,6 @@ import (
 	"github.com/gomodule/redigo/redis"
 )
 
-
 func main() {
 	conn, err := redis.Dial("tcp",
 		"192.168.1.90:6379",
