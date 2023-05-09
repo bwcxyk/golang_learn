@@ -11,14 +11,14 @@ import (
 	"github.com/streadway/amqp"
 )
 
-//Rabbitmq 初始化rabbitmq连接
+// Rabbitmq 初始化rabbitmq连接
 type Rabbitmq struct {
 	conn *amqp.Connection
 	err  error
 }
 
 func New(ip string) (*Rabbitmq, error) {
-	amqps := fmt.Sprintf("amqp://testmq:testmq@%s:5672/", ip)
+	amqps := fmt.Sprintf("amqp://rabbitmq:rabbitmq@%s:5672/", ip)
 	conn, err := amqp.Dial(amqps)
 	if err != nil {
 		return nil, err
@@ -60,4 +60,8 @@ func (rabbitmq *Rabbitmq) ClearQueue(id string) (string, error) {
 		return "", err
 	}
 	return "Clear queue success", nil
+}
+
+func main() {
+	New("192.168.0.11")
 }
