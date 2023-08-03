@@ -22,7 +22,12 @@ func Query(ctx context.Context, db *sql.DB, query string, wg *sync.WaitGroup) er
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		err := rows.Close()
+		if err != nil {
+			fmt.Println("Error closing rows:", err)
+		}
+	}(rows)
 
 	// 处理查询结果
 	for rows.Next() {
