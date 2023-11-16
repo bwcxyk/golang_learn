@@ -211,7 +211,7 @@ func main() {
 	if err != nil {
 		log.Fatal("无法读取 SQL 文件:", err)
 	}
-	query := string(sqlBytes)
+	sqlStatement := string(sqlBytes)
 
 	// 创建结果切片，用于存储每个关键字的查询结果
 	results := make([][]string, len(keywords))
@@ -224,7 +224,7 @@ func main() {
 	// 并发执行查询操作
 	for i, keyword := range keywords {
 		wg.Add(1)
-		go queryDatabase(db, query, keyword, resultChan, &wg)
+		go queryDatabase(db, sqlStatement, keyword, resultChan, &wg)
 		go func(index int) {
 			results[index] = <-resultChan // 接收查询结果并存入对应索引位置
 		}(i)

@@ -52,7 +52,12 @@ func main() {
 		fmt.Println("连接数据库时出错:", err)
 		return
 	}
-	defer db.Close() // 当主函数执行完毕时关闭数据库连接
+	defer func(db *sql.DB) {
+		err := db.Close()
+		if err != nil {
+			fmt.Println("Error closing db:", err)
+		}
+	}(db) // 当主函数执行完毕时关闭数据库连接
 
 	var wg sync.WaitGroup
 	wg.Add(1)

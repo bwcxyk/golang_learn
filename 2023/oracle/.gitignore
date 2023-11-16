@@ -1,7 +1,7 @@
 .vscode/
 .idea
 *.xlsx
-sqlStatement.sql
+query.sql
 config.yaml
 
 # Binaries for programs and plugins
