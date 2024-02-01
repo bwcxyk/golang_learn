@@ -3,8 +3,9 @@ module oracle
 go 1.19
 
 require (
-	github.com/sijms/go-ora/v2 v2.7.9
+	github.com/sijms/go-ora/v2 v2.8.7
 	github.com/xuri/excelize/v2 v2.7.1
+	sigs.k8s.io/yaml v1.4.0
 )
 
 require (

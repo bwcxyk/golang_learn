@@ -13,22 +13,53 @@ import (
 
 	go_ora "github.com/sijms/go-ora/v2"
 	"github.com/xuri/excelize/v2"
+	"sigs.k8s.io/yaml"
 )
 
-func connectToDatabase() (*sql.DB, error) {
+// Config 结构体映射了YAML配置文件的结构
+type Config struct {
+	Database struct {
+		Host     string `yaml:"host"`
+		Port     int    `yaml:"port"`
+		Service  string `yaml:"service"`
+		Username string `yaml:"username"`
+		Password string `yaml:"password"`
+	} `yaml:"database"`
+}
 
-	// 连接字符串示例，根据实际情况进行修改
-	dsn := go_ora.BuildUrl("192.168.1.70", 1521, "ORCL", "tms_user", "123456", nil)
+// loadConfig 从指定的路径加载配置文件
+func loadConfig(configPath string) (*Config, error) {
+	var config Config
 
-	// 使用连接字符串打开数据库连接
-	db, err := sql.Open("oracle", dsn)
+	configFile, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, err
 	}
 
-	// 设置连接池的最大连接数和空闲连接数
+	err = yaml.Unmarshal(configFile, &config)
+	if err != nil {
+		return nil, err
+	}
+
+	return &config, nil
+}
+
+// connectToDatabase 使用配置文件中的DSN来连接数据库
+func connectToDatabase(configPath string) (*sql.DB, error) {
+	config, err := loadConfig(configPath)
+	if err != nil {
+		return nil, err
+	}
+
+	dsn := go_ora.BuildUrl(config.Database.Host, config.Database.Port, config.Database.Service, config.Database.Username, config.Database.Password, nil)
+
+	db, err := sql.Open("oracle", dsn)
+	if err != nil {
+		return nil, err
+	}
+    // 设置连接池的最大连接数和空闲连接数
 	db.SetMaxIdleConns(10)
-	db.SetMaxOpenConns(100)
+	db.SetMaxOpenConns(50)
 
 	return db, nil
 }
@@ -85,7 +116,7 @@ func main() {
 	log.Printf("连接数据库")
 
 	// 连接数据库
-	db, err := connectToDatabase()
+	db, err := connectToDatabase("./config.yaml")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -108,7 +139,7 @@ func main() {
 	// 打印日志
 	log.Printf("读取SQL")
 	// 读取 SQL 文件
-	sqlFile := "update.sql"
+	sqlFile := "sqlStatement.sql"
 	sqlBytes, err := os.ReadFile(sqlFile)
 	if err != nil {
 		log.Fatal("无法读取 SQL 文件:", err)
