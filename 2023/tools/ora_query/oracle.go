@@ -8,18 +8,56 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	go_ora "github.com/sijms/go-ora/v2"
-	"github.com/xuri/excelize/v2"
 	"log"
 	"os"
 	"strconv"
 	"sync"
+
+	goora "github.com/sijms/go-ora/v2"
+	"github.com/xuri/excelize/v2"
+	"gopkg.in/yaml.v3"
 )
 
-func connectToDatabase() (*sql.DB, error) {
+// 定义一个结构体来匹配 YAML 文件的内容
+type Config struct {
+	Database struct {
+		Host        string `yaml:"host"`
+		Port        int    `yaml:"port"`
+		User        string `yaml:"user"`
+		Password    string `yaml:"password"`
+		ServiceName string `yaml:"service_name"`
+	} `yaml:"database"`
+}
 
-	// 连接字符串示例，根据实际情况进行修改
-	dsn := go_ora.BuildUrl("192.168.1.70", 1521, "ORCL", "tms_user", "123456", nil)
+var (
+	configOnce sync.Once
+	config     Config
+)
+
+func initConfig() {
+	// 读取 YAML 文件内容
+	data, err := os.ReadFile("config.yaml")
+	if err != nil {
+		log.Fatalf("error reading file: %v", err)
+	}
+
+	// 解析 YAML 数据到 Config 结构体
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		log.Fatalf("error unmarshalling data: %v", err)
+	}
+}
+
+func connectDb() (*sql.DB, error) {
+	configOnce.Do(initConfig) // 确保配置只加载一次
+
+	user := config.Database.User
+	password := config.Database.Password
+	host := config.Database.Host
+	port := config.Database.Port
+	serviceName := config.Database.ServiceName
+
+	// 构建连接字符串
+	dsn := goora.BuildUrl(host, port, serviceName, user, password, nil)
 
 	// 使用连接字符串打开数据库连接
 	db, err := sql.Open("oracle", dsn)
@@ -28,13 +66,13 @@ func connectToDatabase() (*sql.DB, error) {
 	}
 
 	// 设置连接池的最大连接数和空闲连接数
-	db.SetMaxIdleConns(10)
+	db.SetMaxIdleConns(5)
 	db.SetMaxOpenConns(100)
 
 	return db, nil
 }
 
-func readKeywordsFromExcel(filePath string) ([]string, error) {
+func readData(filePath string) ([]string, error) {
 
 	// 打开 Excel 文件
 	file, err := excelize.OpenFile(filePath)
@@ -57,8 +95,8 @@ func readKeywordsFromExcel(filePath string) ([]string, error) {
 			continue
 		}
 
-		// 假设关键字所在列为 A 列
-		keyword := row[1]
+		// 假设关键字所在列为第一列
+		keyword := row[0] // row[0]表示第一列
 		keywords = append(keywords, keyword)
 	}
 
@@ -69,7 +107,8 @@ func queryDatabase(db *sql.DB, query string, keyword string, resultChan chan<- [
 	defer wg.Done()
 
 	// 执行查询
-	rows, err := db.Query(query, sql.Named("keyword", keyword))
+	// searchTerm 是查询参数，需要替换为你自己的查询参数
+	rows, err := db.Query(query, sql.Named("searchTerm", keyword))
 	if err != nil {
 		log.Printf("查询关键字 %s 时发生错误: %v", keyword, err)
 		resultChan <- []string{} // 发送空结果到channel，用于同步操作
@@ -131,7 +170,7 @@ func queryDatabase(db *sql.DB, query string, keyword string, resultChan chan<- [
 	resultChan <- result
 }
 
-func writeResultsToExcel(filePath string, results [][]string) error {
+func writeData(filePath string, results [][]string) error {
 	file, err := excelize.OpenFile(filePath)
 	if err != nil {
 		return err
@@ -183,7 +222,7 @@ func main() {
 	log.Printf("连接数据库")
 
 	// 连接数据库
-	db, err := connectToDatabase()
+	db, err := connectDb()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -198,7 +237,7 @@ func main() {
 	log.Printf("读取关键字")
 
 	// 读取关键字
-	keywords, err := readKeywordsFromExcel(filePath)
+	keywords, err := readData(filePath)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -206,7 +245,7 @@ func main() {
 	// 打印日志
 	log.Printf("读取SQL")
 	// 读取 SQL 文件
-	sqlFile := "query.sql"
+	sqlFile := "ora.sql"
 	sqlBytes, err := os.ReadFile(sqlFile)
 	if err != nil {
 		log.Fatal("无法读取 SQL 文件:", err)
@@ -237,7 +276,7 @@ func main() {
 	log.Printf("写入 Excel 文件")
 
 	// 将查询结果写回到原始 Excel 文件的 Sheet2
-	err = writeResultsToExcel(filePath, results)
+	err = writeData(filePath, results)
 	if err != nil {
 		log.Fatal(err)
 	}

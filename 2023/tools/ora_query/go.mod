@@ -5,6 +5,7 @@ go 1.19
 require (
 	github.com/sijms/go-ora/v2 v2.7.9
 	github.com/xuri/excelize/v2 v2.7.1
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
