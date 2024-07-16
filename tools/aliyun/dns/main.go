@@ -1,8 +1,3 @@
-// This file is auto-generated, don't edit it. Thanks.
-/**
-* Author: 东南dnf
-* Powered by Aliyun Darabonba Language :)
- */
 package main
 
 import (
