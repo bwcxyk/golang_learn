@@ -1,5 +1,5 @@
 /*
-@Author : YaoKun
+@Author : Yao Kun
 @Time : 2023/7/28 16:42
 */
 
@@ -11,7 +11,9 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
+	"unicode/utf8"
 
 	goora "github.com/sijms/go-ora/v2"
 	"github.com/xuri/excelize/v2"
@@ -69,6 +71,11 @@ func connectDb() (*sql.DB, error) {
 	db.SetMaxIdleConns(5)
 	db.SetMaxOpenConns(100)
 
+	if err = db.Ping(); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+
 	return db, nil
 }
 
@@ -79,9 +86,10 @@ func readData(filePath string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer file.Close()
 
-	// 读取 Sheet1 中的所有行
-	rows, err := file.GetRows("Sheet1")
+	// 读取“数据源”工作表中的所有行
+	rows, err := file.GetRows("数据源")
 	if err != nil {
 		return nil, err
 	}
@@ -94,24 +102,36 @@ func readData(filePath string) ([]string, error) {
 		if i == 0 {
 			continue
 		}
+		if len(row) == 0 {
+			continue
+		}
 
 		// 假设关键字所在列为第一列
-		keyword := row[0] // row[0]表示第一列
+		keyword := strings.TrimSpace(row[0]) // row[0]表示第一列
+		if keyword == "" {
+			continue
+		}
 		keywords = append(keywords, keyword)
 	}
 
 	return keywords, nil
 }
 
-func queryDatabase(db *sql.DB, query string, keyword string, resultChan chan<- []string, wg *sync.WaitGroup) {
+type queryResult struct {
+	index  int
+	columns []string
+	result []string
+}
+
+func queryDatabase(db *sql.DB, query string, keyword string, index int, resultChan chan<- queryResult, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	// 执行查询
-	// searchTerm 是查询参数，需要替换为你自己的查询参数
-	rows, err := db.Query(query, sql.Named("searchTerm", keyword))
+	// keyword 是查询参数，需要与 SQL 中的命名参数保持一致
+	rows, err := db.Query(query, sql.Named("keyword", keyword))
 	if err != nil {
 		log.Printf("查询关键字 %s 时发生错误: %v", keyword, err)
-		resultChan <- []string{} // 发送空结果到channel，用于同步操作
+		resultChan <- queryResult{index: index, columns: []string{}, result: []string{}} // 发送空结果到channel，用于同步操作
 		return
 	}
 	defer func(rows *sql.Rows) {
@@ -125,7 +145,7 @@ func queryDatabase(db *sql.DB, query string, keyword string, resultChan chan<- [
 	columns, err := rows.Columns()
 	if err != nil {
 		log.Printf("获取列信息时发生错误: %v", err)
-		resultChan <- []string{} // 发送空结果到channel，用于同步操作
+		resultChan <- queryResult{index: index, columns: []string{}, result: []string{}} // 发送空结果到channel，用于同步操作
 		return
 	}
 
@@ -146,7 +166,7 @@ func queryDatabase(db *sql.DB, query string, keyword string, resultChan chan<- [
 		err := rows.Scan(pointers...)
 		if err != nil {
 			log.Printf("扫描结果时发生错误: %v", err)
-			resultChan <- []string{} // 发送空结果到channel，
+			resultChan <- queryResult{index: index, columns: columns, result: []string{}} // 发送空结果到channel，
 
 			return
 		}
@@ -159,7 +179,7 @@ func queryDatabase(db *sql.DB, query string, keyword string, resultChan chan<- [
 
 	if err = rows.Err(); err != nil {
 		log.Printf("迭代结果集时发生错误: %v", err)
-		resultChan <- []string{} // 发送空结果到channel，用于同步操作
+		resultChan <- queryResult{index: index, columns: columns, result: []string{}} // 发送空结果到channel，用于同步操作
 		return
 	}
 
@@ -167,25 +187,38 @@ func queryDatabase(db *sql.DB, query string, keyword string, resultChan chan<- [
 	//log.Printf("查询结果: %v", result)
 
 	// 将查询结果发送到channel，用于同步操作
-	resultChan <- result
+	resultChan <- queryResult{index: index, columns: columns, result: result}
 }
 
-func writeData(filePath string, results [][]string) error {
+func writeData(filePath string, header []string, results [][]string) error {
 	file, err := excelize.OpenFile(filePath)
 	if err != nil {
 		return err
 	}
+	defer file.Close()
 
-	sheetName := "Sheet2"
+	// 将结果写入“查询结果”工作表
+	sheetName := "查询结果"
 	_, err = file.NewSheet(sheetName)
 	if err != nil {
 		return err
 	}
 
+	// 先写表头
+	for j, value := range header {
+		colAlpha := convertToAlphaString(j + 1)
+		cell := colAlpha + "1"
+		err := file.SetCellValue(sheetName, cell, value)
+		if err != nil {
+			return err
+		}
+	}
+
+	// 再写数据，起始行为第2行
 	for i, row := range results {
 		for j, value := range row {
 			colAlpha := convertToAlphaString(j + 1)
-			cell := colAlpha + strconv.Itoa(i+1)
+			cell := colAlpha + strconv.Itoa(i+2)
 			err := file.SetCellValue(sheetName, cell, value)
 			if err != nil {
 				return err
@@ -209,6 +242,20 @@ func convertToAlphaString(n int) string {
 		alpha = convertToAlphaString(quotient) + alpha
 	}
 	return alpha
+}
+
+func normalizeSQL(raw string) string {
+	s := strings.TrimSpace(raw)
+	if strings.HasPrefix(s, "\uFEFF") {
+		s = strings.TrimPrefix(s, "\uFEFF")
+	}
+	for strings.HasSuffix(s, ";") {
+		s = strings.TrimSpace(strings.TrimSuffix(s, ";"))
+	}
+	if !utf8.ValidString(s) {
+		return strings.ToValidUTF8(s, "")
+	}
+	return s
 }
 
 func main() {
@@ -245,17 +292,21 @@ func main() {
 	// 打印日志
 	log.Printf("读取SQL")
 	// 读取 SQL 文件
-	sqlFile := "ora.sql"
+	sqlFile := "search.sql"
 	sqlBytes, err := os.ReadFile(sqlFile)
 	if err != nil {
 		log.Fatal("无法读取 SQL 文件:", err)
 	}
-	sqlStatement := string(sqlBytes)
+	sqlStatement := normalizeSQL(string(sqlBytes))
+	if sqlStatement == "" {
+		log.Fatal("SQL 文件内容为空")
+	}
 
 	// 创建结果切片，用于存储每个关键字的查询结果
 	results := make([][]string, len(keywords))
-	resultChan := make(chan []string) // 创建channel用于接收查询结果
-	wg := sync.WaitGroup{}            // 创建WaitGroup用于等待所有goroutine执行完成
+	headers := []string{}
+	resultChan := make(chan queryResult, len(keywords)) // 创建channel用于接收查询结果
+	wg := sync.WaitGroup{}                              // 创建WaitGroup用于等待所有goroutine执行完成
 
 	// 打印日志
 	log.Printf("查询数据")
@@ -263,20 +314,25 @@ func main() {
 	// 并发执行查询操作
 	for i, keyword := range keywords {
 		wg.Add(1)
-		go queryDatabase(db, sqlStatement, keyword, resultChan, &wg)
-		go func(index int) {
-			results[index] = <-resultChan // 接收查询结果并存入对应索引位置
-		}(i)
+		go queryDatabase(db, sqlStatement, keyword, i, resultChan, &wg)
 	}
 
 	// 等待所有goroutine执行完成
 	wg.Wait()
+	close(resultChan)
+
+	for item := range resultChan {
+		results[item.index] = item.result
+		if len(headers) == 0 && len(item.columns) > 0 {
+			headers = item.columns
+		}
+	}
 
 	// 打印日志
 	log.Printf("写入 Excel 文件")
 
-	// 将查询结果写回到原始 Excel 文件的 Sheet2
-	err = writeData(filePath, results)
+	// 将查询结果写回到原始 Excel 文件的“查询结果”工作表
+	err = writeData(filePath, headers, results)
 	if err != nil {
 		log.Fatal(err)
 	}
