@@ -6,6 +6,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -13,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	goora "github.com/sijms/go-ora/v2"
@@ -67,9 +69,11 @@ func connectDb() (*sql.DB, error) {
 		return nil, err
 	}
 
-	// 设置连接池的最大连接数和空闲连接数
-	db.SetMaxIdleConns(5)
-	db.SetMaxOpenConns(100)
+	// 设置连接池参数
+	db.SetMaxIdleConns(2)
+	db.SetMaxOpenConns(5)
+	db.SetConnMaxLifetime(30 * time.Minute)
+	db.SetConnMaxIdleTime(10 * time.Minute)
 
 	if err = db.Ping(); err != nil {
 		_ = db.Close()
@@ -80,15 +84,12 @@ func connectDb() (*sql.DB, error) {
 }
 
 func readData(filePath string) ([]string, error) {
-
-	// 打开 Excel 文件
 	file, err := excelize.OpenFile(filePath)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
 
-	// 读取“数据源”工作表中的所有行
 	rows, err := file.GetRows("数据源")
 	if err != nil {
 		return nil, err
@@ -96,18 +97,12 @@ func readData(filePath string) ([]string, error) {
 
 	var keywords []string
 
-	// 迭代每一行，读取关键字
 	for i, row := range rows {
-		// 跳过表头行
-		if i == 0 {
-			continue
-		}
-		if len(row) == 0 {
+		if i == 0 || len(row) == 0 {
 			continue
 		}
 
-		// 假设关键字所在列为第一列
-		keyword := strings.TrimSpace(row[0]) // row[0]表示第一列
+		keyword := strings.TrimSpace(row[0])
 		if keyword == "" {
 			continue
 		}
@@ -118,76 +113,83 @@ func readData(filePath string) ([]string, error) {
 }
 
 type queryResult struct {
-	index  int
+	index   int
 	columns []string
-	result []string
+	result  []string
 }
 
-func queryDatabase(db *sql.DB, query string, keyword string, index int, resultChan chan<- queryResult, wg *sync.WaitGroup) {
-	defer wg.Done()
+func queryDatabase(db *sql.DB, query string, keyword string, index int, resultChan chan<- queryResult) {
 
-	// 执行查询
-	// keyword 是查询参数，需要与 SQL 中的命名参数保持一致
-	rows, err := db.Query(query, sql.Named("keyword", keyword))
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	rows, err := db.QueryContext(ctx, query, sql.Named("keyword", keyword))
 	if err != nil {
-		log.Printf("查询关键字 %s 时发生错误: %v", keyword, err)
-		resultChan <- queryResult{index: index, columns: []string{}, result: []string{}} // 发送空结果到channel，用于同步操作
+		log.Printf("[错误] 查询关键字 %s 时发生错误: %v", keyword, err)
+		resultChan <- queryResult{
+			index:   index,
+			columns: []string{},
+			result:  []string{},
+		}
 		return
 	}
 	defer func(rows *sql.Rows) {
-		err := rows.Close()
-		if err != nil {
-
-		}
+		_ = rows.Close()
 	}(rows)
 
-	// 获取结果集的列信息
 	columns, err := rows.Columns()
 	if err != nil {
-		log.Printf("获取列信息时发生错误: %v", err)
-		resultChan <- queryResult{index: index, columns: []string{}, result: []string{}} // 发送空结果到channel，用于同步操作
+		log.Printf("[错误] 获取列信息时发生错误: %v", err)
+		resultChan <- queryResult{
+			index:   index,
+			columns: []string{},
+			result:  []string{},
+		}
 		return
 	}
 
-	// 创建一个与列数相同长度的切片，用于存储每个字段的值
 	values := make([]interface{}, len(columns))
-	// 创建一个与列数相同长度的切片，用于存储每个字段的指针地址
 	pointers := make([]interface{}, len(columns))
 
-	// 为每个字段创建一个指针，并将其存储到pointers切片中
 	for i := range values {
 		pointers[i] = &values[i]
 	}
 
-	var result []string // 存储查询结果
+	var result []string
 
-	// 循环遍历结果集，并将每个字段的值读取到相应的指针地址
 	for rows.Next() {
+
 		err := rows.Scan(pointers...)
 		if err != nil {
-			log.Printf("扫描结果时发生错误: %v", err)
-			resultChan <- queryResult{index: index, columns: columns, result: []string{}} // 发送空结果到channel，
-
+			log.Printf("[错误] 扫描结果时发生错误: %v", err)
+			resultChan <- queryResult{
+				index:   index,
+				columns: columns,
+				result:  []string{},
+			}
 			return
 		}
 
-		// 将每个字段的值转换为字符串，并添加到结果切片中
 		for _, value := range values {
-			result = append(result, fmt.Sprintf("%v", value))
+			result = append(result, valueToString(value))
 		}
 	}
 
 	if err = rows.Err(); err != nil {
-		log.Printf("迭代结果集时发生错误: %v", err)
-		resultChan <- queryResult{index: index, columns: columns, result: []string{}} // 发送空结果到channel，用于同步操作
+		log.Printf("[错误] 迭代结果集时发生错误: %v", err)
+		resultChan <- queryResult{
+			index:   index,
+			columns: columns,
+			result:  []string{},
+		}
 		return
 	}
 
-	// 打印查询结果
-	//log.Printf("查询结果: %v", result)
-
-	// 将查询结果发送到channel，用于同步操作
-	resultChan <- queryResult{index: index, columns: columns, result: result}
+	resultChan <- queryResult{
+		index:   index,
+		columns: columns,
+		result:  result,
+	}
 }
 
 func writeData(filePath string, header []string, results [][]string) error {
@@ -197,14 +199,12 @@ func writeData(filePath string, header []string, results [][]string) error {
 	}
 	defer file.Close()
 
-	// 将结果写入“查询结果”工作表
-	sheetName := "查询结果"
+	sheetName := "查询_结果"
 	_, err = file.NewSheet(sheetName)
 	if err != nil {
 		return err
 	}
 
-	// 先写表头
 	for j, value := range header {
 		colAlpha := convertToAlphaString(j + 1)
 		cell := colAlpha + "1"
@@ -214,7 +214,6 @@ func writeData(filePath string, header []string, results [][]string) error {
 		}
 	}
 
-	// 再写数据，起始行为第2行
 	for i, row := range results {
 		for j, value := range row {
 			colAlpha := convertToAlphaString(j + 1)
@@ -226,7 +225,7 @@ func writeData(filePath string, header []string, results [][]string) error {
 		}
 	}
 
-	err = file.SaveAs(filePath)
+	err = file.Save()
 	if err != nil {
 		return err
 	}
@@ -244,6 +243,34 @@ func convertToAlphaString(n int) string {
 	return alpha
 }
 
+func valueToString(value interface{}) string {
+	if value == nil {
+		return ""
+	}
+
+	var strVal string
+
+	switch v := value.(type) {
+	case []byte:
+		strVal = string(v)
+
+	case time.Time:
+		strVal = v.Format("2006-01-02 15:04:05")
+
+	default:
+		strVal = fmt.Sprintf("%v", v)
+	}
+
+	strVal = strings.TrimSpace(strVal)
+
+	switch strings.ToLower(strVal) {
+	case "", "<nil>", "null", "nil", "/*nil*/":
+		return ""
+	}
+
+	return strVal
+}
+
 func normalizeSQL(raw string) string {
 	s := strings.TrimSpace(raw)
 	if strings.HasPrefix(s, "\uFEFF") {
@@ -259,39 +286,27 @@ func normalizeSQL(raw string) string {
 }
 
 func main() {
-	// 输入参数
 	if len(os.Args) < 2 {
 		log.Fatal("请提供 Excel 文件名作为命令行参数")
 	}
 	filePath := os.Args[1]
 
-	// 打印日志
 	log.Printf("连接数据库")
-
-	// 连接数据库
 	db, err := connectDb()
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer func(db *sql.DB) {
-		err := db.Close()
-		if err != nil {
-
-		}
+		_ = db.Close()
 	}(db)
 
-	// 打印日志
 	log.Printf("读取关键字")
-
-	// 读取关键字
 	keywords, err := readData(filePath)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// 打印日志
 	log.Printf("读取SQL")
-	// 读取 SQL 文件
 	sqlFile := "search.sql"
 	sqlBytes, err := os.ReadFile(sqlFile)
 	if err != nil {
@@ -302,22 +317,27 @@ func main() {
 		log.Fatal("SQL 文件内容为空")
 	}
 
-	// 创建结果切片，用于存储每个关键字的查询结果
 	results := make([][]string, len(keywords))
 	headers := []string{}
-	resultChan := make(chan queryResult, len(keywords)) // 创建channel用于接收查询结果
-	wg := sync.WaitGroup{}                              // 创建WaitGroup用于等待所有goroutine执行完成
+	resultChan := make(chan queryResult, len(keywords))
+	wg := sync.WaitGroup{}
 
-	// 打印日志
-	log.Printf("查询数据")
+	sem := make(chan struct{}, 5)
 
-	// 并发执行查询操作
+	log.Printf("开始查询数据")
+
 	for i, keyword := range keywords {
 		wg.Add(1)
-		go queryDatabase(db, sqlStatement, keyword, i, resultChan, &wg)
+		sem <- struct{}{} // 抢占名额
+
+		go func(idx int, kw string) {
+			defer wg.Done()
+			defer func() { <-sem }() // 释放名额
+
+			queryDatabase(db, sqlStatement, kw, idx, resultChan)
+		}(i, keyword)
 	}
 
-	// 等待所有goroutine执行完成
 	wg.Wait()
 	close(resultChan)
 
@@ -328,12 +348,10 @@ func main() {
 		}
 	}
 
-	// 打印日志
 	log.Printf("写入 Excel 文件")
-
-	// 将查询结果写回到原始 Excel 文件的“查询结果”工作表
 	err = writeData(filePath, headers, results)
 	if err != nil {
 		log.Fatal(err)
 	}
+	log.Printf("任务完成")
 }
